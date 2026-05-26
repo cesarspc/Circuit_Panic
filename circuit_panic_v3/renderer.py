@@ -21,7 +21,9 @@ from constants import (
     FONT_FALLBACK,
     FONT_MAIN,
     HEIGHT,
+    NEON_CYAN,
     NEON_GREEN,
+    NEON_PURPLE,
     NEON_RED,
     NODE_RADIUS,
     PANEL_BG,
@@ -35,11 +37,19 @@ from constants import (
     START_BUTTON_RECT,
     TEXT,
     TEXT_MUTED,
+    UPSKILLS_LAUNCH_BUTTON_RECT,
     WHITE,
     WIDTH,
     YELLOW,
 )
-from game import STATE_LEVEL_COMPLETE, STATE_PLAYING, STATE_RESULTS, STATE_START, CircuitPanicGame
+from game import (
+    STATE_LEVEL_COMPLETE,
+    STATE_PLAYING,
+    STATE_RESULTS,
+    STATE_START,
+    STATE_UPSKILLS_INTRO,
+    CircuitPanicGame,
+)
 
 
 class Renderer:
@@ -55,6 +65,10 @@ class Renderer:
             [random.randint(0, WIDTH), random.randint(0, HEIGHT), random.uniform(18, 55)]
             for _ in range(75)
         ]
+        # Upskills intro animation state
+        self.scan_y: float = 0.0
+        self.glitch_timer: float = 0.0
+        self.glitch_offset: int = 0
 
     def _font(self, size: int, bold: bool = False) -> pygame.font.Font:
         font = pygame.font.SysFont(FONT_MAIN, size, bold=bold)
@@ -64,7 +78,9 @@ class Renderer:
 
     def draw(self, game: CircuitPanicGame, dt: float) -> None:
         self.draw_background(dt)
-        if game.state == STATE_START:
+        if game.state == STATE_UPSKILLS_INTRO:
+            self.draw_upskills_intro(dt)
+        elif game.state == STATE_START:
             self.draw_start_screen()
         elif game.state == STATE_PLAYING:
             self.draw_game_screen(game)
@@ -89,6 +105,99 @@ class Renderer:
             alpha_surface = pygame.Surface((8, 8), pygame.SRCALPHA)
             pygame.draw.circle(alpha_surface, (*NEON_GREEN, 70), (4, 4), 2)
             self.screen.blit(alpha_surface, (point[0], point[1]))
+
+    def draw_upskills_intro(self, dt: float) -> None:
+        """Pantalla de presentación del ecosistema Upskills."""
+        ticks = pygame.time.get_ticks()
+
+        # ── Scan-line animation ────────────────────────────────────────────────
+        self.scan_y += 160 * dt
+        if self.scan_y > HEIGHT + 60:
+            self.scan_y = -60
+
+        # ── Glitch timer for title ────────────────────────────────────────────
+        self.glitch_timer -= dt
+        if self.glitch_timer <= 0:
+            self.glitch_offset = random.choice([-2, -1, 0, 0, 0, 0, 1, 2])
+            self.glitch_timer = random.uniform(0.06, 0.30)
+
+        pulse = 0.5 + 0.5 * math.sin(ticks / 380)
+
+        # ── UPSKILLS wordmark ─────────────────────────────────────────────────
+        shadow = self.font_title.render("UPSKILLS", True, (55, 18, 90))
+        self.screen.blit(shadow, shadow.get_rect(center=(WIDTH // 2 + 3, 84)))
+        title_surf = self.font_title.render("UPSKILLS", True, NEON_PURPLE)
+        self.screen.blit(title_surf, title_surf.get_rect(center=(WIDTH // 2 + self.glitch_offset, 84)))
+
+        # Glow bar under wordmark
+        glow_bar = pygame.Surface((480, 6), pygame.SRCALPHA)
+        glow_alpha = int(90 + 80 * pulse)
+        pygame.draw.rect(glow_bar, (*NEON_PURPLE, glow_alpha), (0, 0, 480, 6), border_radius=3)
+        self.screen.blit(glow_bar, (WIDTH // 2 - 240, 112))
+
+        # ── Tagline ────────────────────────────────────────────────────────────
+        self._draw_centered_text("Desarrolla tus habilidades.", self.font_body, TEXT_MUTED, 136)
+
+        # ── Thin divider ──────────────────────────────────────────────────────
+        pygame.draw.line(self.screen, (*NEON_PURPLE, 80), (160, 158), (740, 158), 1)  # type: ignore[arg-type]
+
+        # ── Platform description card ──────────────────────────────────────────
+        card = pygame.Rect(130, 170, 640, 148)
+        
+
+        # ── Minigame active badge ──────────────────────────────────────────────
+        badge = pygame.Rect(205, 336, 490, 68)
+        # Outer glow
+        badge_glow = pygame.Surface((badge.width + 24, badge.height + 24), pygame.SRCALPHA)
+        
+
+        # ── Skill pills ────────────────────────────────────────────────────────
+        skills = ["Resolución de Problemas"]
+        pill_y = 428
+        total_w = sum(self.font_small.size(s)[0] + 30 for s in skills) + 14 * (len(skills) - 1)
+        pill_x = WIDTH // 2 - total_w // 2
+        for skill in skills:
+            tw = self.font_small.size(skill)[0]
+            pill_w = tw + 30
+            pr = pygame.Rect(pill_x, pill_y, pill_w, 26)
+            pygame.draw.rect(self.screen, (20, 48, 85), pr, border_radius=13)
+            pygame.draw.rect(self.screen, BLUE, pr, 1, border_radius=13)
+            self._draw_centered_on(skill, self.font_small, BLUE, pr.centerx, pr.centery)
+            pill_x += pill_w + 14
+
+        # ── Stealth notice ─────────────────────────────────────────────────────
+        self._draw_centered_text(
+            "Proximamente con más habilidades",
+            self.font_small, TEXT_MUTED, 472
+        )
+
+        # ── Launch button ──────────────────────────────────────────────────────
+        btn = pygame.Rect(UPSKILLS_LAUNCH_BUTTON_RECT)
+        btn_glow = pygame.Surface((btn.width + 28, btn.height + 28), pygame.SRCALPHA)
+        pygame.draw.rect(
+            btn_glow,
+            (*NEON_PURPLE, int(35 + pulse * 65)),
+            (0, 0, btn.width + 28, btn.height + 28),
+            border_radius=20,
+        )
+        self.screen.blit(btn_glow, (btn.x - 14, btn.y - 14))
+        pygame.draw.rect(self.screen, (20, 12, 38), btn, border_radius=14)
+        pygame.draw.rect(self.screen, NEON_PURPLE, btn, 2, border_radius=14)
+        self._draw_centered_on("Iniciar", self.font_button, NEON_PURPLE, btn.centerx, btn.centery)
+
+        # ── Keyboard hint ──────────────────────────────────────────────────────
+        self._draw_centered_text("Enter o Espacio para continuar", self.font_small, TEXT_MUTED, 632)
+
+        # ── Footer ─────────────────────────────────────────────────────────────
+        pygame.draw.line(self.screen, PANEL_BORDER, (60, 653), (840, 653), 1)
+        self._draw_text("Upskills Platform  v1.0", self.font_small, TEXT_MUTED, 70, 659)
+        active_color = NEON_GREEN if int(ticks / 600) % 2 == 0 else (0, 180, 100)
+        self._draw_text("\u25cf  Stealth Assessment Active", self.font_small, active_color, 582, 659)
+
+        # ── Scan line overlay ──────────────────────────────────────────────────
+        scan = pygame.Surface((WIDTH, 3), pygame.SRCALPHA)
+        pygame.draw.rect(scan, (*NEON_CYAN, 55), (0, 0, WIDTH, 3))
+        self.screen.blit(scan, (0, int(self.scan_y)))
 
     def draw_start_screen(self) -> None:
         self._draw_centered_text("CIRCUIT PANIC", self.font_title, NEON_GREEN, 160)

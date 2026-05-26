@@ -20,11 +20,13 @@ from constants import (
     RESTART_BUTTON_RECT,
     START_BUTTON_RECT,
     TIME_LIMIT_SECONDS,
+    UPSKILLS_LAUNCH_BUTTON_RECT,
 )
 from stealth import StealthAssessment
 from report_generator import generate_stealth_report
 
 
+STATE_UPSKILLS_INTRO = "upskills_intro"
 STATE_START = "start"
 STATE_PLAYING = "playing"
 STATE_LEVEL_COMPLETE = "level_complete"
@@ -77,7 +79,7 @@ class CircuitPanicGame:
     """Controla estados, niveles, nodos, intentos de reparación y resultados."""
 
     def __init__(self) -> None:
-        self.state = STATE_START
+        self.state = STATE_UPSKILLS_INTRO
         self.levels = self._build_levels()
         self.level_index = 0
         self.config: LevelConfig | None = None
@@ -106,7 +108,7 @@ class CircuitPanicGame:
                 title="Diagnóstico inicial",
                 rows=5,
                 cols=5,
-                root=(2, 1),
+                root=(2, 1),  # placeholder; randomized on load
                 failed_nodes={(2, 1), (2, 2), (2, 3), (2, 4)},
                 ambiguity=1,
                 routes_enabled=False,
@@ -117,7 +119,7 @@ class CircuitPanicGame:
                 title="Rutas paralelas",
                 rows=5,
                 cols=5,
-                root=(1, 2),
+                root=(1, 2),  # placeholder; randomized on load
                 failed_nodes={(1, 2), (1, 3), (1, 4), (2, 2), (3, 2), (4, 2)},
                 ambiguity=2,
                 routes_enabled=True,
@@ -128,7 +130,7 @@ class CircuitPanicGame:
                 title="Señal ambigua",
                 rows=5,
                 cols=5,
-                root=(3, 1),
+                root=(3, 1),  # placeholder; randomized on load
                 failed_nodes={(3, 1), (3, 2), (3, 3), (4, 1), (4, 2), (2, 1), (2, 2)},
                 ambiguity=3,
                 routes_enabled=True,
@@ -149,6 +151,8 @@ class CircuitPanicGame:
     def load_level(self, index: int) -> None:
         self.level_index = index
         self.config = self.levels[index]
+        # Randomize the failure origin among all red (failed) nodes each load
+        self.config.root = random.choice(sorted(self.config.failed_nodes))
         self.nodes = {}
         self.edges = []
         self.selected_node_id = None
@@ -200,33 +204,33 @@ class CircuitPanicGame:
 
         if self.config.ambiguity == 1:
             if is_root:
-                return "Recibe señal, pero no la envía. La ruptura primaria está aquí."
+                return "Volt: 0.0V | Amp: 2.45A | Temp: 84°C"
             if node.failed:
-                return "No recibe señal estable. Parece consecuencia de un corte anterior."
+                return "Volt: 0.0V | Amp: 0.00A | Temp: 22°C"
             if dist_to_root <= 1:
-                return "Señal normal cerca de una zona afectada. Revisa el nodo vecino fallado."
-            return "Señal estable. No parece ser la causa raíz."
+                return "Volt: 5.0V | Amp: 0.08A | Temp: 31°C"
+            return "Volt: 5.0V | Amp: 0.08A | Temp: 23°C"
 
         if self.config.ambiguity == 2:
             if is_root:
-                return "Entrada presente; salida intermitente hacia dos rutas. Sospecha alta."
+                return "V_out: 1.2V | Tasa de error: 1.5e-1 | Temp: 76°C"
             if node.failed and dist_to_root == 1:
-                return "Pérdida de señal justo después de un punto crítico. Puede ser efecto secundario."
+                return "Volt: 0.3V | Tasa de error: 1.0e-0 | Temp: 26°C"
             if node.failed:
-                return "Falla propagada: no hay evidencia de ruptura local primaria."
+                return "Volt: 0.0V | Tasa de error: 1.0e-0 | Temp: 21°C"
             if dist_to_root <= 2:
-                return "Nodo estable, pero cerca de una bifurcación con pérdida de energía."
-            return "Lectura estable; su ruta mantiene continuidad."
+                return "Volt: 4.8V | Tasa de error: 1.0e-7 | Temp: 28°C"
+            return "Volt: 5.0V | Tasa de error: 0.0 | Temp: 22°C"
 
         if is_root:
-            return "El patrón de entrada/salida no coincide. Probable origen del fallo sistémico."
+            return "Volt: 0.0V | Sonido/señal: 12dB | Temp: 29°C"
         if node.failed and dist_to_root == 1:
-            return "Falla secundaria cercana: la pérdida puede venir de un nodo adyacente."
+            return "Volt: 0.0V | Sonido/señal: 3dB | Temp: 29°C"
         if node.failed:
-            return "Sin energía suficiente; podría depender de una ruta ya interrumpida."
+            return "Volt: 0.0V | Sonido/señal: 0dB | Temp: 20°C"
         if dist_to_root <= 2:
-            return "Señal parcial en zona de conflicto. Conviene contrastar con nodos fallados."
-        return "Continuidad aceptable. Poca evidencia de ser origen."
+            return "Volt: 5.0V | Sonido: 32dB | Temp: 25°C"
+        return "Volt: 5.0V | Sonido: 45dB | Temp: 22°C"
 
     def update(self, dt: float) -> None:
         self._update_particles(dt)
@@ -245,6 +249,11 @@ class CircuitPanicGame:
         return max(0.0, TIME_LIMIT_SECONDS - self.elapsed_level_time)
 
     def handle_mouse_down(self, pos: tuple[int, int], button: int) -> None:
+        if self.state == STATE_UPSKILLS_INTRO:
+            if pygame.Rect(UPSKILLS_LAUNCH_BUTTON_RECT).collidepoint(pos):
+                self.state = STATE_START
+            return
+
         if self.state == STATE_START:
             if pygame.Rect(START_BUTTON_RECT).collidepoint(pos):
                 self.start_game()
@@ -288,6 +297,9 @@ class CircuitPanicGame:
                 return
 
     def handle_key_down(self, key: int) -> None:
+        if self.state == STATE_UPSKILLS_INTRO and key in (pygame.K_RETURN, pygame.K_SPACE):
+            self.state = STATE_START
+            return
         if self.state == STATE_PLAYING and key == pygame.K_r and self.selected_node_id:
             self.attempt_repair(self.selected_node_id)
         elif self.state == STATE_LEVEL_COMPLETE and key in (pygame.K_RETURN, pygame.K_SPACE):
